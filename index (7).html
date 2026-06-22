@@ -591,13 +591,12 @@ function getCurrentISOWeek(d) {
 }
 /* Calcule les en-têtes de colonnes avec dates à partir de l'id semaine ex: 2025-W23 */
 function buildHeaders(semaineId) {
-  const jours = ['Ven', 'Sam', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven+1', 'Sam+1'];
+  const jours = ['Ven', 'Sam', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven+1'];
   // Offset en jours depuis le lundi de la semaine ISO
-  // Notre semaine : Ven(-3), Sam(-2), Lun(0), Mar(1), Mer(2), Jeu(3), Ven+1(4), Sam+1(5)
-  const offsets = [-3, -2, 0, 1, 2, 3, 4, 5];
+  // Notre semaine : Ven(-3), Sam(-2), Lun(0), Mar(1), Mer(2), Jeu(3), Ven+1(4)
+  const offsets = [-3, -2, 0, 1, 2, 3, 4];
   try {
     const [year, w] = semaineId.split('-W');
-    // Trouver le lundi de cette semaine ISO
     const jan4 = new Date(Date.UTC(+year, 0, 4));
     const lundi = new Date(jan4);
     lundi.setUTCDate(jan4.getUTCDate() - ((jan4.getUTCDay() || 7) - 1) + (+w - 1) * 7);
@@ -1088,97 +1087,38 @@ async function loadProducteur() {
   produits.sort((a, b) => (a.variete || '').localeCompare(b.variete || '', 'fr'));
 
   const headers = buildHeaders(cache.semaineCourante);
-  const fields = ['vendredi1', 'samedi', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi2', 'samedi2'];
-  const isCapic = saison === 'CAPIC';
-
-  // Pour CAPIC : index par "produit_code|calibre", sinon par produit_code seul
-  const prevsByKey = {};
-  (prevsR.data || []).forEach(p => {
-    const key = isCapic ? `${p.produit_code}|${p.calibre || ''}` : p.produit_code;
-    prevsByKey[key] = p;
-  });
-
-  // Pour CAPIC : grouper les lignes existantes par produit_code (pour afficher plusieurs calibres)
-  const lignesCapic = {}; // produit_code → [{calibre, ...prevData}]
-  if (isCapic) {
-    (prevsR.data || []).forEach(p => {
-      if (!lignesCapic[p.produit_code]) lignesCapic[p.produit_code] = [];
-      lignesCapic[p.produit_code].push(p);
-    });
-  }
-
-  const colCalibre = isCapic ? `<th style="min-width:80px;font-size:9px;padding:5px 6px">Calibre</th>` : '';
-  const colspanExtra = isCapic ? 1 : 0;
+  const fields = ['vendredi1', 'samedi', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi2'];
 
   let html = `<table class="prev-table"><thead><tr>
     <th class="produit-col">Produit</th>
-    ${colCalibre}
     ${headers.map(h => `<th>${h}</th>`).join('')}
     <th class="total-col">TOTAL</th>
     <th style="min-width:40px"></th>
   </tr></thead><tbody>`;
 
   produits.forEach(prod => {
-    if (isCapic) {
-      // Lignes existantes avec calibre pour ce produit
-      const lignes = lignesCapic[prod.code] || [{}]; // au moins une ligne vide
-      lignes.forEach((p, li) => {
-        const calibreVal = p.calibre || '';
-        const rowKey = `${prod.code}|${calibreVal}`;
-        const total = fields.reduce((s, f) => s + (parseFloat(p[f]) || 0), 0);
-        const inputs = fields.map(f =>
-          `<td><input type="number" min="0" step="1" data-code="${prod.code}" data-field="${f}" data-calibre="${calibreVal}" value="${p[f] || ''}" placeholder="0" onchange="onCellChange(this)"></td>`
-        ).join('');
-        const nomCell = li === 0
-          ? `<td class="produit-cell" rowspan="${lignes.length}" style="vertical-align:top"><span style="display:flex;align-items:center;gap:8px">${getVeggieIcon(prod.variete)}<span><strong>${prod.variete}</strong><span class="emballage">${prod.emballage}</span></span></span></td>`
-          : '';
-        html += `<tr>
-          ${nomCell}
-          <td style="padding:4px 6px">
-            <input type="text" placeholder="ex: 3/4" data-code="${prod.code}" data-calibre-input="1"
-              value="${calibreVal}"
-              style="width:72px;padding:5px 7px;border:1.5px solid var(--sable-dark);border-radius:6px;font-size:.8rem;background:var(--sable-light)"
-              onchange="onCalibreChange(this,'${prod.code}','${calibreVal}')">
-          </td>
-          ${inputs}
-          <td class="total-cell" data-total="${rowKey}">${total || ''}</td>
-          <td style="text-align:center">
-            ${li === 0 ? `<button class="btn-fin-campagne" title="Fin de campagne — retirer ce produit" onclick="ouvrirModalFinCampagne('${prod.code}','${(prod.variete||'').replace(/'/g, "\\'")}')">🏁</button>` : `<button class="btn-fin-campagne" title="Supprimer cette ligne calibre" onclick="supprimerLigneCalibre('${prod.code}','${calibreVal}')">✕</button>`}
-          </td>
-        </tr>`;
-      });
-      // Bouton ajouter un calibre supplémentaire
-      html += `<tr style="background:rgba(232,163,61,.04)">
-        <td></td>
-        <td colspan="${fields.length + 3}" style="padding:4px 8px">
-          <button class="btn btn-ghost btn-sm" style="font-size:.75rem;border-style:dashed" onclick="ajouterLigneCalibre('${prod.code}')">+ Ajouter un calibre</button>
-        </td>
-      </tr>`;
-    } else {
-      // Rendu standard pour les autres producteurs — identique à avant
-      const p = prevsByKey[prod.code] || {};
-      const total = fields.reduce((s, f) => s + (parseFloat(p[f]) || 0), 0);
-      const inputs = fields.map(f =>
-        `<td><input type="number" min="0" step="1" data-code="${prod.code}" data-field="${f}" value="${p[f] || ''}" placeholder="0" onchange="onCellChange(this)"></td>`
-      ).join('');
-      html += `<tr>
-        <td class="produit-cell"><span style="display:flex;align-items:center;gap:8px">${getVeggieIcon(prod.variete)}<span><strong>${prod.variete}</strong><span class="emballage">${prod.emballage}</span></span></span></td>
-        ${inputs}
-        <td class="total-cell" data-total="${prod.code}">${total || ''}</td>
-        <td style="text-align:center">
-          <button class="btn-fin-campagne" title="Fin de campagne — retirer ce produit" onclick="ouvrirModalFinCampagne('${prod.code}','${(prod.variete||'').replace(/'/g, "\\'")}')">🏁</button>
-        </td>
-      </tr>`;
-    }
+    const p = prevsByCode[prod.code] || {};
+    const total = fields.reduce((s, f) => s + (parseFloat(p[f]) || 0), 0);
+    const inputs = fields.map(f =>
+      `<td><input type="number" min="0" step="1" data-code="${prod.code}" data-field="${f}" value="${p[f] || ''}" placeholder="0" onchange="onCellChange(this)"></td>`
+    ).join('');
+    html += `<tr>
+      <td class="produit-cell"><span style="display:flex;align-items:center;gap:8px">${getVeggieIcon(prod.variete)}<span><strong>${prod.variete}</strong><span class="emballage">${prod.emballage}</span></span></span></td>
+      ${inputs}
+      <td class="total-cell" data-total="${prod.code}">${total || ''}</td>
+      <td style="text-align:center">
+        <button class="btn-fin-campagne" title="Fin de campagne — retirer ce produit" onclick="ouvrirModalFinCampagne('${prod.code}','${(prod.variete||'').replace(/'/g, "\\'")}')">🏁</button>
+      </td>
+    </tr>`;
   });
 
-  // Ligne d'ajout de produit : menu déroulant + bouton produit non listé
+  // Ligne d'ajout de produit
   const produitsDispos = cache.produits.filter(p => p.saison === saison && !produits.find(x => x.code === p.code));
   const optionsProduits = produitsDispos.map(p =>
     `<option value="${p.code}">${p.variete} — ${p.emballage}</option>`
   ).join('');
   html += `<tr style="background:rgba(232,163,61,.05)">
-    <td colspan="${fields.length + 3 + colspanExtra}" style="padding:10px 12px">
+    <td colspan="${fields.length + 3}" style="padding:10px 12px">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <select id="prod-add-select" style="flex:1;min-width:200px;padding:7px 10px;border:2px solid var(--sable-dark);border-radius:8px;background:var(--sable-light);font-size:.82rem">
           <option value="">— Choisir un produit à ajouter —</option>
@@ -1360,14 +1300,29 @@ async function ajouterProduitExistant() {
   const code = sel.value;
   const prod = cache.produits.find(p => p.code === code);
   if (!prod) return;
-  const saison = cache.params.saison_active || 'Eté';
+
+  // Utiliser la saison du produit lui-même (pas la saison_active globale)
+  // Cela garantit que CAPIC → saison CAPIC, Eté → saison Eté
+  const saison = prod.saison || cache.params.saison_active || 'Eté';
+
   showSync('syncing', '☁️ Ajout…');
   const { error } = await sb.from('adherent_produits').upsert(
     { adherent_id: session.user.id, produit_code: code, saison, actif: true, date_desactivation: null },
     { onConflict: 'adherent_id,produit_code,saison' }
   );
   if (error) { showSync('error', '❌ Erreur'); toast('Erreur'); console.error(error); return; }
-  cache.adherentProduits.push({ adherent_id: session.user.id, produit_code: code, saison, actif: true, date_desactivation: null });
+
+  // Mettre à jour le cache : si la ligne existe déjà (désactivée), la réactiver ; sinon l'ajouter
+  const existing = cache.adherentProduits.find(
+    ap => ap.adherent_id === session.user.id && ap.produit_code === code && ap.saison === saison
+  );
+  if (existing) {
+    existing.actif = true;
+    existing.date_desactivation = null;
+  } else {
+    cache.adherentProduits.push({ adherent_id: session.user.id, produit_code: code, saison, actif: true, date_desactivation: null });
+  }
+
   showSync('ok', '☁️ Produit ajouté');
   toast(`✓ "${prod.variete}" ajouté à votre liste`);
   loadProducteur();
@@ -1426,21 +1381,41 @@ function fermerModalFinCampagne() {
 async function confirmerFinCampagne() {
   if (!fcCodeEnCours) return;
   const code = fcCodeEnCours;
-  const saison = cache.params.saison_active || 'Eté';
+
+  console.log('[FIN-CAMPAGNE] code:', code);
+  console.log('[FIN-CAMPAGNE] cache.adherentProduits:', JSON.stringify(cache.adherentProduits));
+
+  // Lire la saison depuis la liaison de cet adhérent pour ce produit
+  const liaison = cache.adherentProduits.find(
+    ap => ap.adherent_id === session.user.id && ap.produit_code === code
+  );
+  console.log('[FIN-CAMPAGNE] liaison trouvée:', liaison);
+
+  if (!liaison) {
+    toast('Produit introuvable dans votre liste');
+    fermerModalFinCampagne();
+    return;
+  }
+  const saison = liaison.saison;
+  console.log('[FIN-CAMPAGNE] saison:', saison, '| adherent_id:', session.user.id);
+
   const btn = document.getElementById('fc-btn-confirmer');
   btn.disabled = true;
   showSync('syncing', '☁️ Mise à jour…');
 
-  const { error } = await sb.from('adherent_produits')
+  const { error, data: updateResult } = await sb.from('adherent_produits')
     .update({ actif: false, date_desactivation: new Date().toISOString() })
     .eq('adherent_id', session.user.id)
     .eq('produit_code', code)
-    .eq('saison', saison);
+    .eq('saison', saison)
+    .select();
+
+  console.log('[FIN-CAMPAGNE] UPDATE result:', { error, updateResult });
 
   btn.disabled = false;
   if (error) { showSync('error', '❌ Erreur'); toast('Erreur lors de la mise à jour'); console.error(error); return; }
 
-  // Retirer du cache local (n'affecte pas l'historique des previsions en base)
+  // Retirer du cache local
   cache.adherentProduits = cache.adherentProduits.filter(
     ap => !(ap.adherent_id === session.user.id && ap.produit_code === code && ap.saison === saison)
   );
@@ -1450,80 +1425,6 @@ async function confirmerFinCampagne() {
   toast('✓ Produit retiré de votre liste — historique conservé');
   loadProducteur();
 }
-
-// ── FONCTIONS CALIBRE CAPIC ─────────────────────────────────
-
-function ajouterLigneCalibre(produitCode) {
-  // Trouver le bouton "Ajouter un calibre" pour ce produit et insérer une ligne avant lui
-  const btnRow = document.querySelector(`button[onclick="ajouterLigneCalibre('${produitCode}')"]`)?.closest('tr');
-  if (!btnRow) return;
-
-  const fields = ['vendredi1','samedi','lundi','mardi','mercredi','jeudi','vendredi2','samedi2'];
-  const tempCalibre = ''; // calibre vide — sera renseigné par le producteur
-  const rowKey = `${produitCode}|__new_${Date.now()}`;
-
-  const inputs = fields.map(f =>
-    `<td><input type="number" min="0" step="1" data-code="${produitCode}" data-field="${f}" data-calibre="" value="" placeholder="0" onchange="onCellChange(this)"></td>`
-  ).join('');
-
-  const newRow = document.createElement('tr');
-  newRow.innerHTML = `
-    <td style="padding:4px 6px">
-      <input type="text" placeholder="ex: 3/4" data-code="${produitCode}" data-calibre-input="1"
-        value=""
-        style="width:72px;padding:5px 7px;border:1.5px solid var(--sable-dark);border-radius:6px;font-size:.8rem;background:var(--sable-light)"
-        onchange="onCalibreChange(this,'${produitCode}','')">
-    </td>
-    ${inputs}
-    <td class="total-cell" data-total="${rowKey}"></td>
-    <td style="text-align:center">
-      <button class="btn-fin-campagne" title="Supprimer cette ligne" onclick="this.closest('tr').remove()">✕</button>
-    </td>`;
-
-  btnRow.parentNode.insertBefore(newRow, btnRow);
-
-  // Focus sur l'input calibre de la nouvelle ligne
-  newRow.querySelector('input[type=text]').focus();
-}
-
-async function onCalibreChange(inp, codeProduit, ancienCalibre) {
-  const nouveauCalibre = inp.value.trim();
-  if (!nouveauCalibre || nouveauCalibre === ancienCalibre) return;
-
-  // Si l'ancien calibre avait des données en base, on les migre vers le nouveau calibre
-  if (ancienCalibre) {
-    showSync('syncing', '☁️ Mise à jour calibre…');
-    const { error } = await sb.from('previsions')
-      .update({ calibre: nouveauCalibre || null })
-      .eq('semaine_id', cache.semaineCourante)
-      .eq('adherent_id', session.user.id)
-      .eq('produit_code', codeProduit)
-      .eq('calibre', ancienCalibre);
-    if (error) { showSync('error', '❌ Erreur'); console.error(error); return; }
-    showSync('ok', '☁️ Calibre mis à jour');
-  }
-  // Mettre à jour les data-calibre des inputs de la ligne pour les prochains onCellChange
-  const row = inp.closest('tr');
-  row.querySelectorAll('input[data-calibre]').forEach(i => i.dataset.calibre = nouveauCalibre);
-  inp.dataset.calibre = nouveauCalibre;
-}
-
-async function supprimerLigneCalibre(codeProduit, calibre) {
-  if (!confirm(`Supprimer la ligne calibre "${calibre || 'sans calibre'}" pour ce produit ?`)) return;
-  showSync('syncing', '☁️ Suppression…');
-  const { error } = await sb.from('previsions')
-    .delete()
-    .eq('semaine_id', cache.semaineCourante)
-    .eq('adherent_id', session.user.id)
-    .eq('produit_code', codeProduit)
-    .eq('calibre', calibre || null);
-  if (error) { showSync('error', '❌ Erreur'); console.error(error); return; }
-  showSync('ok', '☁️ Ligne supprimée');
-  toast('Ligne calibre supprimée');
-  loadProducteur();
-}
-
-// ── FIN FONCTIONS CALIBRE CAPIC ──────────────────────────────
 
 async function saveCommentaire() {
   const commentaire = document.getElementById('prod-commentaire').value;
@@ -1538,13 +1439,11 @@ async function onCellChange(inp) {
   const code = inp.dataset.code;
   const field = inp.dataset.field;
   const value = parseFloat(inp.value) || 0;
-  const calibre = inp.dataset.calibre !== undefined ? inp.dataset.calibre : null;
-  const rowKey = calibre !== null ? `${code}|${calibre}` : code;
 
   const row = inp.closest('tr');
   let total = 0;
   row.querySelectorAll('input[type=number]').forEach(i => total += parseFloat(i.value) || 0);
-  const totalCell = row.querySelector(`[data-total="${rowKey}"]`) || row.querySelector(`[data-total="${code}"]`);
+  const totalCell = row.querySelector(`[data-total="${code}"]`);
   if (totalCell) totalCell.textContent = total || '';
 
   showSync('syncing', '☁️ Enregistrement…');
@@ -1556,18 +1455,12 @@ async function onCellChange(inp) {
     [field]: value
   };
 
-  if (calibre !== null) upsertData.calibre = calibre || null;
-
   if (code === 'AUTRE') {
     const nomInput = document.getElementById('autre-nom');
     if (nomInput) upsertData.produit_nom = nomInput.value;
   }
 
-  const onConflict = (calibre !== null)
-    ? 'semaine_id,adherent_id,produit_code,calibre'
-    : 'semaine_id,adherent_id,produit_code';
-
-  const {error} = await sb.from('previsions').upsert(upsertData, {onConflict});
+  const { error } = await sb.from('previsions').upsert(upsertData, { onConflict: 'semaine_id,adherent_id,produit_code' });
 
   if (error) {
     showSync('error', '❌ Erreur');
@@ -1805,14 +1698,14 @@ async function loadConsolidation() {
       <td class="produit-cell"><strong>${r.variete}</strong><span class="emballage">${r.saison} · ${r.famille} · ${r.emballage}</span></td>
       <td>${r.vendredi || ''}</td><td>${r.samedi || ''}</td><td>${r.lundi || ''}</td>
       <td>${r.mardi || ''}</td><td>${r.mercredi || ''}</td><td>${r.jeudi || ''}</td>
-      <td>${r.vendredi_p1 || ''}</td><td>${r.samedi2 || ''}</td>
+      <td>${r.vendredi_p1 || ''}</td>
       <td class="total-cell">${r.total_semaine}</td>
       <td><strong>${r.nb_apporteurs}</strong></td>
     </tr>`;
   });
   html += `<tr style="background:var(--olive);color:var(--blanc);font-weight:700">
     <td style="padding:10px">TOTAL TOUS PRODUITS</td>
-    <td colspan="7"></td>
+    <td colspan="6"></td>
     <td style="background:var(--safran);color:var(--encre)">${grandTotal.toLocaleString('fr-FR')}</td>
     <td></td>
   </tr>`;
@@ -1840,7 +1733,7 @@ async function loadDetail() {
   }
 
   // Organiser par produit_code → adherent_id → données
-  const fields = ['vendredi1', 'samedi', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi2', 'samedi2'];
+  const fields = ['vendredi1', 'samedi', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi2'];
   const headers = buildHeaders(cache.semaineCourante);
 
   // Liste des producteurs présents
@@ -1852,14 +1745,13 @@ async function loadDetail() {
   });
   const producteurs = Object.values(producteursMap).sort((a,b) => ((a.nom_exploitation||a.representant||a.code)).localeCompare((b.nom_exploitation||b.representant||b.code),'fr'));
 
-  // Organiser par "produit_code|calibre" → adherent_id → données
+  // Organiser par produit_code → adherent_id → données
   const parProduit = {};
   prevs.forEach(p => {
     const total = fields.reduce((s, f) => s + (parseFloat(p[f]) || 0), 0);
     if (total === 0) return;
-    const rowKey = `${p.produit_code}|${p.calibre || ''}`;
-    if (!parProduit[rowKey]) parProduit[rowKey] = { produit_code: p.produit_code, calibre: p.calibre || null, adherents: {} };
-    parProduit[rowKey].adherents[p.adherent_id] = p;
+    if (!parProduit[p.produit_code]) parProduit[p.produit_code] = {};
+    parProduit[p.produit_code][p.adherent_id] = p;
   });
 
   // Récupérer infos produits
@@ -1875,21 +1767,12 @@ async function loadDetail() {
   let grandTotal = 0;
 
   Object.keys(parProduit)
-    .sort((a,b) => {
-      const codeA = parProduit[a].produit_code, codeB = parProduit[b].produit_code;
-      const varA = produitsMap[codeA]?.variete || codeA;
-      const varB = produitsMap[codeB]?.variete || codeB;
-      const cmp = varA.localeCompare(varB, 'fr');
-      if (cmp !== 0) return cmp;
-      return (parProduit[a].calibre || '').localeCompare(parProduit[b].calibre || '', 'fr');
-    })
-    .forEach(rowKey => {
-      const { produit_code: code, calibre, adherents: adherentsData } = parProduit[rowKey];
+    .sort((a,b) => ((produitsMap[a]?.variete||a).localeCompare(produitsMap[b]?.variete||b,'fr')))
+    .forEach(code => {
       const prod = produitsMap[code];
       const isTmp = code.startsWith('TMP-');
-      const nomProd = prod
-        ? `${prod.variete}${calibre ? ` <span style="color:var(--olive-dark);font-size:.78rem">· ${calibre}</span>` : ''} ${prod.emballage}${isTmp ? ' <span class="tmp-badge">[TMP]</span>' : ''}`
-        : code;
+      const nomProd = prod ? `${prod.variete} ${prod.emballage}${isTmp ? ' <span class="tmp-badge">[TMP]</span>' : ''}` : code;
+      const adherentsData = parProduit[code];
       const adherentIds = Object.keys(adherentsData);
 
       adherentIds.forEach((adhId, idx) => {
@@ -1906,13 +1789,12 @@ async function loadDetail() {
         </tr>`;
       });
 
-      // Sous-total ligne produit+calibre
       const sousTotalFields = fields.map(f =>
-        adherentIds.reduce((s, id) => s + (parseFloat(adherentsData[id][f]) || 0), 0)
+        adherentIds.reduce((s, id) => s + (parseFloat(parProduit[code][id][f]) || 0), 0)
       );
       const sousTotal = sousTotalFields.reduce((a, b) => a + b, 0);
       html += `<tr style="background:var(--sable-dark);font-weight:700;font-size:.8rem">
-        <td colspan="2" style="text-align:right;padding:4px 10px;color:var(--encre-soft)">Sous-total ${prod?.variete || code}${calibre ? ` · ${calibre}` : ''}</td>
+        <td colspan="2" style="text-align:right;padding:4px 10px;color:var(--encre-soft)">Sous-total ${nomProd}</td>
         ${sousTotalFields.map(v => `<td>${v || ''}</td>`).join('')}
         <td class="total-cell">${sousTotal}</td>
       </tr>`;
@@ -2032,11 +1914,11 @@ function isQuinzaineCourante(mois, quinzaine, annee) {
   const yr = parseInt(yrStr);
   const w  = parseInt(wStr || '1');
 
-  // Calculer les dates de la semaine courante (ven → sam+1, 8 jours)
+  // Calculer les dates de la semaine courante (ven → ven+1, 7 jours)
   const jan4 = new Date(Date.UTC(yr, 0, 4));
   const lundi = new Date(jan4);
   lundi.setUTCDate(jan4.getUTCDate() - ((jan4.getUTCDay() || 7) - 1) + (w - 1) * 7);
-  const offsets = [-3, -2, 0, 1, 2, 3, 4, 5]; // ven, sam, lun...sam+1
+  const offsets = [-3, -2, 0, 1, 2, 3, 4]; // ven, sam, lun...ven+1
   const joursSemaine = offsets.map(off => {
     const d = new Date(lundi);
     d.setUTCDate(lundi.getUTCDate() + off);
@@ -2282,7 +2164,7 @@ function initRecapJour() {
   if (!sel) return;
   const semaine = cache.semaineCourante;
   const headers = buildHeaders(semaine); // ['Ven 30/05', 'Sam 31/05', ...]
-  const fields  = ['vendredi1','samedi','lundi','mardi','mercredi','jeudi','vendredi2','samedi2'];
+  const fields  = ['vendredi1','samedi','lundi','mardi','mercredi','jeudi','vendredi2'];
   const current = sel.value;
   sel.innerHTML = '<option value="">— Choisir un jour —</option>';
   fields.forEach((f, i) => {
@@ -2308,7 +2190,7 @@ async function loadRecapJour() {
 
   const semaine  = cache.semaineCourante;
   const headers  = buildHeaders(semaine);
-  const fields   = ['vendredi1','samedi','lundi','mardi','mercredi','jeudi','vendredi2','samedi2'];
+  const fields   = ['vendredi1','samedi','lundi','mardi','mercredi','jeudi','vendredi2'];
   const jourLabel = headers[fields.indexOf(field)] || field;
 
   content.innerHTML = '<p class="empty-state" style="padding:20px">⏳ Chargement…</p>';
@@ -2348,33 +2230,26 @@ async function loadRecapJour() {
   const producteurs = Object.values(producteursMap)
     .sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
 
-  // ── Lignes uniques triées : produit + calibre ──
-  const lignesMap = {};
+  // ── Produits uniques triés alpha (ligne) ──
+  const produitsMap = {};
   prevs.forEach(p => {
-    const rowKey = `${p.produit_code}|${p.calibre || ''}`;
-    if (!lignesMap[rowKey]) {
+    if (!produitsMap[p.produit_code]) {
       const pr = p.produit || {};
-      lignesMap[rowKey] = {
-        key: rowKey,
+      produitsMap[p.produit_code] = {
         code: p.produit_code,
-        calibre: p.calibre || null,
         variete: pr.variete || p.produit_code,
         emballage: pr.emballage || ''
       };
     }
   });
-  const produits = Object.values(lignesMap)
-    .sort((a, b) => {
-      const cmp = a.variete.localeCompare(b.variete, 'fr');
-      return cmp !== 0 ? cmp : (a.calibre || '').localeCompare(b.calibre || '', 'fr');
-    });
+  const produits = Object.values(produitsMap)
+    .sort((a, b) => a.variete.localeCompare(b.variete, 'fr'));
 
-  // ── Index croisé rowKey × adherent_id → valeur ──
+  // ── Index croisé produit_code × adherent_id → valeur ──
   const idx = {};
   prevs.forEach(p => {
-    const rowKey = `${p.produit_code}|${p.calibre || ''}`;
-    if (!idx[rowKey]) idx[rowKey] = {};
-    idx[rowKey][p.adherent_id] = parseFloat(p[field]) || 0;
+    if (!idx[p.produit_code]) idx[p.produit_code] = {};
+    idx[p.produit_code][p.adherent_id] = parseFloat(p[field]) || 0;
   });
 
   // ── KPIs ──
@@ -2420,17 +2295,16 @@ async function loadRecapJour() {
   producteurs.forEach(p => totauxParProd[p.id] = 0);
 
   produits.forEach((prod, iProd) => {
-    const rowVals = producteurs.map(p => idx[prod.key]?.[p.id] || 0);
+    const rowVals = producteurs.map(p => idx[prod.code]?.[p.id] || 0);
     const rowTotal = rowVals.reduce((s, v) => s + v, 0);
     rowVals.forEach((v, i) => totauxParProd[producteurs[i].id] += v);
     const bg = iProd % 2 === 0 ? '' : 'style="background:var(--sable-light)"';
-    const label = prod.calibre ? `${prod.variete} <span style="font-size:.75rem;color:var(--olive-dark)">· ${prod.calibre}</span>` : prod.variete;
 
     html += `<tr ${bg}>
       <td class="produit-cell">
         <span style="display:flex;align-items:center;gap:7px">
           ${getVeggieIcon(prod.variete)}
-          <span><strong>${label}</strong><span class="emballage">${prod.emballage}</span></span>
+          <span><strong>${prod.variete}</strong><span class="emballage">${prod.emballage}</span></span>
         </span>
       </td>
       ${rowVals.map(v => v > 0
@@ -2464,7 +2338,7 @@ function printRecapJour() {
   const tableEl = document.getElementById('recap-jour-table');
   if (!tableEl) return;
   const sel = document.getElementById('recap-jour-select');
-  const fields  = ['vendredi1','samedi','lundi','mardi','mercredi','jeudi','vendredi2','samedi2'];
+  const fields  = ['vendredi1','samedi','lundi','mardi','mercredi','jeudi','vendredi2'];
   const headers = buildHeaders(cache.semaineCourante);
   const field   = sel ? sel.value : '';
   const jourLabel = headers[fields.indexOf(field)] || field;
@@ -2615,7 +2489,7 @@ async function loadRecapProd() {
   showSync('syncing', '☁️ Chargement…');
 
   const semaine = cache.semaineCourante;
-  const fields = ['vendredi1', 'samedi', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi2', 'samedi2'];
+  const fields = ['vendredi1', 'samedi', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi2'];
   const headers = buildHeaders(semaine);
 
   const [prevsR, statutR] = await Promise.all([
@@ -2630,14 +2504,11 @@ async function loadRecapProd() {
   const commentaire = statutR.data?.commentaire || '';
   const dateSoumission = statutR.data?.date_soumission;
 
-  // Indexer par "produit_code|calibre" pour gérer les multi-calibres CAPIC
-  const prevsByKey = {};
-  prevs.forEach(p => {
-    const key = `${p.produit_code}|${p.calibre || ''}`;
-    prevsByKey[key] = p;
-  });
+  // Indexer par produit_code
+  const prevsByCode = {};
+  prevs.forEach(p => { prevsByCode[p.produit_code] = p; });
 
-  // Produits de cet adhérent (saison auto-détectée comme côté producteur)
+  // Saison auto-détectée
   const saisonsAdh = [...new Set(
     cache.adherentProduits.filter(ap => ap.adherent_id === adherentId && ap.actif !== false).map(ap => ap.saison)
   )];
@@ -2648,28 +2519,11 @@ async function loadRecapProd() {
   const produitsMap = {};
   cache.produits.forEach(p => produitsMap[p.code] = p);
 
-  // Construire les lignes : une par (produit_code, calibre) pour les CAPIC, une par produit_code sinon
-  const lignes = [];
-  // D'abord les lignes avec prévisions (incluant multi-calibres)
-  prevs.filter(p => fields.some(f => parseFloat(p[f]) > 0)).forEach(p => {
-    const key = `${p.produit_code}|${p.calibre || ''}`;
-    if (!lignes.find(l => l.key === key)) {
-      lignes.push({ key, code: p.produit_code, calibre: p.calibre || null });
-    }
-  });
-  // Ensuite les produits liés sans prévision (pour les afficher à 0)
-  produitsAdherent.forEach(code => {
-    const key = `${code}|`;
-    if (!lignes.find(l => l.code === code)) {
-      lignes.push({ key, code, calibre: null });
-    }
-  });
-  lignes.sort((a, b) => {
-    const varA = produitsMap[a.code]?.variete || a.code;
-    const varB = produitsMap[b.code]?.variete || b.code;
-    const cmp = varA.localeCompare(varB, 'fr');
-    return cmp !== 0 ? cmp : (a.calibre || '').localeCompare(b.calibre || '', 'fr');
-  });
+  const codesAvecPrevision = prevs.filter(p => fields.some(f => parseFloat(p[f]) > 0)).map(p => p.produit_code);
+  const tousLesCodes = [...new Set([...produitsAdherent, ...codesAvecPrevision])];
+  const produits = tousLesCodes
+    .map(code => produitsMap[code] || { code, variete: code, emballage: '', saison: '' })
+    .sort((a, b) => (a.variete || '').localeCompare(b.variete || '', 'fr'));
 
   const statutColor = { 'SOUMISE': '#4D8B3A', 'EN_COURS': '#B07820', 'NON_SAISI': '#6B7280', 'EN_RETARD': '#C44536' };
 
@@ -2716,20 +2570,16 @@ async function loadRecapProd() {
   </tr></thead><tbody>`;
 
   let grandTotal = 0;
-  lignes.forEach(ligne => {
-    const prod = produitsMap[ligne.code] || { code: ligne.code, variete: ligne.code, emballage: '' };
-    const p = prevsByKey[ligne.key] || {};
+  produits.forEach(prod => {
+    const p = prevsByCode[prod.code] || {};
     const total = fields.reduce((s, f) => s + (parseFloat(p[f]) || 0), 0);
     grandTotal += total;
     const hasData = total > 0;
-    const label = ligne.calibre
-      ? `${prod.variete || prod.code} <span style="font-size:.75rem;color:var(--olive-dark)">· ${ligne.calibre}</span>`
-      : (prod.variete || prod.code);
     html += `<tr style="${!hasData ? 'opacity:.45' : ''}">
       <td class="produit-cell">
         <span style="display:flex;align-items:center;gap:8px">
           ${getVeggieIcon(prod.variete || prod.code)}
-          <span><strong>${label}</strong><span class="emballage">${prod.emballage || ''}</span></span>
+          <span><strong>${prod.variete || prod.code}</strong><span class="emballage">${prod.emballage || ''}</span></span>
         </span>
       </td>
       ${fields.map(f => `<td>${parseFloat(p[f]) || (hasData ? '<span style="color:var(--encre-soft);font-size:.8rem">—</span>' : '')}</td>`).join('')}
